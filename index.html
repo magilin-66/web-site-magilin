@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#8ed7f7" />
+  <title>松鼠的蘋果雨</title>
+  <style>
+    :root{--ink:#4d2f22;--cream:#fff8df;--green:#4f9b55;--orange:#f08a34;--red:#ef5252}
+    *{box-sizing:border-box} html,body{height:100%;margin:0}
+    body{display:grid;place-items:center;background:linear-gradient(#84d9fb,#d8f5ff);font-family:"Trebuchet MS","Noto Sans TC",system-ui,sans-serif;color:var(--ink);overflow:hidden;touch-action:none}
+    .wrap{width:min(100vw,900px);height:min(100dvh,760px);padding:14px;display:flex;flex-direction:column;gap:10px}
+    header{display:flex;justify-content:space-between;align-items:center;gap:10px;background:rgba(255,248,223,.92);border:4px solid #fff;border-radius:24px;padding:10px 18px;box-shadow:0 8px 0 rgba(84,104,57,.18)}
+    h1{font-size:clamp(20px,4vw,32px);margin:0;white-space:nowrap}.stats{display:flex;gap:14px;font-weight:900;font-size:clamp(16px,3vw,23px)}
+    .score{color:#c75a22}.hearts{letter-spacing:2px;min-width:86px;color:var(--red)}
+    .stage{position:relative;min-height:0;flex:1;border:5px solid #fff;border-radius:28px;overflow:hidden;box-shadow:0 12px 0 rgba(52,111,72,.22);background:#aee9ff}
+    canvas{display:block;width:100%;height:100%}
+    .overlay{position:absolute;inset:0;display:grid;place-items:center;background:rgba(62,64,38,.18);backdrop-filter:blur(2px);padding:20px}
+    .card{max-width:470px;text-align:center;background:var(--cream);border:5px solid #fff;border-radius:30px;padding:26px 28px;box-shadow:0 12px 0 rgba(77,47,34,.2);animation:pop .45s cubic-bezier(.2,.9,.2,1.3)}
+    .card h2{font-size:clamp(28px,7vw,50px);margin:0 0 8px}.card p{font-size:clamp(16px,3vw,20px);line-height:1.55;margin:8px 0 20px}
+    button{border:0;border-radius:999px;background:var(--orange);color:white;font-weight:900;font-size:21px;padding:13px 28px;cursor:pointer;box-shadow:0 6px 0 #b64c25;transition:.12s transform,.12s box-shadow}
+    button:hover{transform:translateY(-2px);box-shadow:0 8px 0 #b64c25}button:active{transform:translateY(5px);box-shadow:0 1px 0 #b64c25}button:focus-visible{outline:4px solid #7042c1;outline-offset:4px}
+    .controls{display:flex;justify-content:center;gap:22px}.move{width:92px;padding:10px;background:#6aaf5d;box-shadow:0 5px 0 #397b39;font-size:26px}.move:active{box-shadow:0 1px 0 #397b39}
+    .hint{text-align:center;margin:0;font-size:14px;font-weight:800;color:#41674a}
+    .hidden{display:none}.shake{animation:shake .35s}.flash{animation:flash .35s}
+    @keyframes pop{from{transform:scale(.75);opacity:0}}@keyframes shake{25%{transform:translateX(-8px)}50%{transform:translateX(8px)}75%{transform:translateX(-5px)}}@keyframes flash{50%{filter:brightness(1.5) saturate(1.5)}}
+    @media(min-width:760px){.controls{display:none}.hint{font-size:16px}}
+    @media(max-height:600px){.wrap{padding:6px;gap:5px}header{padding:6px 14px}.hint{display:none}.controls{position:absolute;bottom:18px;left:0;right:0;z-index:4;pointer-events:none}.move{pointer-events:auto;opacity:.85}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header aria-label="遊戲狀態"><h1>🐿️ 松鼠的蘋果雨</h1><div class="stats"><span class="score">分數 <b id="score">0</b></span><span class="hearts" id="hearts" aria-label="剩餘三顆心">♥♥♥</span></div></header>
+    <section class="stage" id="stage" aria-label="接蘋果遊戲區">
+      <canvas id="game"></canvas>
+      <div class="overlay" id="overlay"><div class="card"><h2 id="cardTitle">🍎 接住蘋果！</h2><p id="cardText">左右移動籃子接蘋果，每顆得 1 分。<br>小心刺刺栗子，也別讓蘋果掉到地上！</p><button id="start">開始遊戲</button></div></div>
+    </section>
+    <div class="controls" aria-label="觸控操作"><button class="move" id="left" aria-label="向左移動">◀</button><button class="move" id="right" aria-label="向右移動">▶</button></div>
+    <p class="hint">鍵盤 ← → 或 A D 移動・手機可按按鈕或在畫面拖曳</p>
+  </main>
+<script>
+(() => {
+  const canvas=document.querySelector('#game'),ctx=canvas.getContext('2d'),stage=document.querySelector('#stage');
+  const scoreEl=document.querySelector('#score'),heartsEl=document.querySelector('#hearts'),overlay=document.querySelector('#overlay'),titleEl=document.querySelector('#cardTitle'),textEl=document.querySelector('#cardText'),startBtn=document.querySelector('#start');
+  let W=800,H=560,dpr=1,running=false,score=0,lives=3,last=0,spawnClock=0,elapsed=0,items=[],particles=[],keys={};
+  const player={x:400,y:500,w:116,h:64,speed:440,target:null};
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  function resize(){const r=stage.getBoundingClientRect();dpr=Math.min(devicePixelRatio||1,2);W=r.width;H=r.height;canvas.width=W*dpr;canvas.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);player.y=H-82;player.x=clamp(player.x,58,W-58)}
+  new ResizeObserver(resize).observe(stage); resize();
+  function heartView(){heartsEl.textContent='♥'.repeat(lives)+'♡'.repeat(3-lives);heartsEl.setAttribute('aria-label',`剩餘${lives}顆心`)}
+  function reset(){score=0;lives=3;items=[];particles=[];elapsed=0;spawnClock=0;player.x=W/2;scoreEl.textContent='0';heartView()}
+  function begin(){reset();running=true;overlay.classList.add('hidden');last=performance.now();requestAnimationFrame(loop)}
+  startBtn.addEventListener('click',begin);
+  addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight','a','d','A','D'].includes(e.key)){e.preventDefault();keys[e.key.toLowerCase()]=true}});
+  addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+  function bindHold(id,dir){const b=document.querySelector(id);const on=e=>{e.preventDefault();keys[dir]=true};const off=e=>{e.preventDefault();keys[dir]=false};b.addEventListener('pointerdown',on);b.addEventListener('pointerup',off);b.addEventListener('pointercancel',off);b.addEventListener('pointerleave',off)}
+  bindHold('#left','arrowleft');bindHold('#right','arrowright');
+  stage.addEventListener('pointermove',e=>{if(running&&e.buttons){const r=stage.getBoundingClientRect();player.target=e.clientX-r.left}});stage.addEventListener('pointerdown',e=>{if(running){const r=stage.getBoundingClientRect();player.target=e.clientX-r.left}});
+  function spawn(){const chestnut=Math.random()<Math.min(.18+elapsed/90000,.3);items.push({type:chestnut?'chestnut':'apple',x:55+Math.random()*(W-110),y:105,r:chestnut?19:18,vy:145+Math.random()*55+Math.min(elapsed/180,145),spin:Math.random()*6,vr:(Math.random()-.5)*4})}
+  function hurt(){lives--;heartView();stage.classList.remove('shake');void stage.offsetWidth;stage.classList.add('shake');if(lives<=0)end()}
+  function burst(x,y,color){for(let i=0;i<12;i++)particles.push({x,y,vx:(Math.random()-.5)*210,vy:-60-Math.random()*150,t:1,color})}
+  function end(){running=false;titleEl.textContent='遊戲結束！';textEl.innerHTML=`你接到了 <b>${score}</b> 顆蘋果！<br>${score>=20?'松鼠都佩服你了 🏆':score>=10?'好厲害，再挑戰一次吧！':'再試一次，手感會越來越好！'}`;startBtn.textContent='重新開始';overlay.classList.remove('hidden')}
+  function update(dt){elapsed+=dt*1000;let dir=(keys.arrowright||keys.d?1:0)-(keys.arrowleft||keys.a?1:0);if(dir)player.target=null;player.x=clamp(player.x+dir*player.speed*dt,58,W-58);if(player.target!=null){player.x+=(player.target-player.x)*Math.min(1,dt*10);player.x=clamp(player.x,58,W-58)}
+    spawnClock-=dt;if(spawnClock<=0){spawn();spawnClock=Math.max(.42,1.05-elapsed/90000)+Math.random()*.3}
+    const basket={l:player.x-player.w/2,r:player.x+player.w/2,t:player.y+10};
+    items.forEach(o=>{o.y+=o.vy*dt;o.spin+=o.vr*dt;if(!o.done&&o.y+o.r>basket.t&&o.y-o.r<player.y+45&&o.x>basket.l&&o.x<basket.r){o.done=true;if(o.type==='apple'){score++;scoreEl.textContent=score;burst(o.x,o.y,'#ffe36c')}else{hurt();burst(o.x,o.y,'#9a5a2b')}}else if(!o.done&&o.y-o.r>H){o.done=true;if(o.type==='apple')hurt()}});items=items.filter(o=>!o.done);
+    particles.forEach(p=>{p.t-=dt*1.7;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=360*dt});particles=particles.filter(p=>p.t>0)
+  }
+  function cloud(x,y,s){ctx.save();ctx.fillStyle='rgba(255,255,255,.86)';ctx.beginPath();ctx.arc(x,y,25*s,0,7);ctx.arc(x+28*s,y-12*s,32*s,0,7);ctx.arc(x+62*s,y,25*s,0,7);ctx.fill();ctx.restore()}
+  function draw(){ctx.clearRect(0,0,W,H);let g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#91dcfa');g.addColorStop(1,'#dff7d7');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);cloud(W*.13,72,.72);cloud(W*.7,50,.58);
+    ctx.fillStyle='#78bb59';ctx.beginPath();ctx.moveTo(0,H*.68);for(let x=0;x<=W;x+=70)ctx.quadraticCurveTo(x+35,H*.58+(x%140?18:0),x+70,H*.68);ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.fill();ctx.fillStyle='#5b9b45';ctx.fillRect(0,H-55,W,55);
+    // Tree
+    ctx.fillStyle='#794b2d';ctx.beginPath();ctx.roundRect(W*.07,-10,110,H*.42,45);ctx.fill();ctx.strokeStyle='#98623a';ctx.lineWidth=9;ctx.beginPath();ctx.moveTo(W*.1,H*.24);ctx.lineTo(W*.03,H*.12);ctx.moveTo(W*.15,H*.25);ctx.lineTo(W*.25,H*.12);ctx.stroke();
+    ctx.fillStyle='#4f9b55';for(let i=0;i<11;i++){ctx.beginPath();ctx.arc((i%6)*W/5+(i%2?20:-10),20+(i%3)*38,70+(i%3)*10,0,7);ctx.fill()}
+    // squirrel
+    const sx=W*.17,sy=82;ctx.fillStyle='#c77b38';ctx.beginPath();ctx.arc(sx-31,sy-5,31,0,7);ctx.arc(sx-49,sy-28,23,0,7);ctx.fill();ctx.fillStyle='#e89649';ctx.beginPath();ctx.ellipse(sx,sy,24,31,-.2,0,7);ctx.fill();ctx.beginPath();ctx.arc(sx+2,sy-30,18,0,7);ctx.fill();ctx.beginPath();ctx.moveTo(sx-10,sy-42);ctx.lineTo(sx-1,sy-60);ctx.lineTo(sx+7,sy-40);ctx.fill();ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(sx+9,sy-33,6,0,7);ctx.fill();ctx.fillStyle='#30231b';ctx.beginPath();ctx.arc(sx+11,sy-34,3,0,7);ctx.arc(sx+20,sy-25,4,0,7);ctx.fill();
+    items.forEach(o=>{ctx.save();ctx.translate(o.x,o.y);ctx.rotate(o.spin);if(o.type==='apple'){ctx.fillStyle='#ef4d48';ctx.beginPath();ctx.arc(-8,2,o.r*.72,0,7);ctx.arc(8,2,o.r*.72,0,7);ctx.fill();ctx.fillStyle='#5e9e46';ctx.beginPath();ctx.ellipse(6,-17,10,5,-.5,0,7);ctx.fill();ctx.strokeStyle='#694127';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(0,-10);ctx.lineTo(2,-22);ctx.stroke()}else{ctx.strokeStyle='#6f3e22';ctx.fillStyle='#a96835';ctx.lineWidth=3;for(let a=0;a<Math.PI*2;a+=Math.PI/6){ctx.beginPath();ctx.moveTo(Math.cos(a)*12,Math.sin(a)*12);ctx.lineTo(Math.cos(a)*28,Math.sin(a)*28);ctx.stroke()}ctx.beginPath();ctx.arc(0,0,o.r,0,7);ctx.fill()}ctx.restore()});
+    // player and basket
+    ctx.save();ctx.translate(player.x,player.y);ctx.fillStyle='#f2b47b';ctx.beginPath();ctx.arc(0,-8,19,0,7);ctx.fill();ctx.fillStyle='#65402d';ctx.beginPath();ctx.arc(0,-16,20,Math.PI,Math.PI*2);ctx.fill();ctx.fillStyle='#6d77d8';ctx.beginPath();ctx.roundRect(-28,9,56,46,18);ctx.fill();ctx.strokeStyle='#714529';ctx.lineWidth=7;ctx.beginPath();ctx.arc(0,2,49,Math.PI,Math.PI*2);ctx.stroke();ctx.fillStyle='#d99a45';ctx.beginPath();ctx.roundRect(-58,11,116,43,10);ctx.fill();ctx.strokeStyle='#98602e';ctx.lineWidth=4;for(let x=-43;x<50;x+=18){ctx.beginPath();ctx.moveTo(x,14);ctx.lineTo(x+7,51);ctx.stroke()}ctx.beginPath();ctx.moveTo(-55,31);ctx.lineTo(55,31);ctx.stroke();ctx.restore();
+    particles.forEach(p=>{ctx.globalAlpha=p.t;ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,4,0,7);ctx.fill();ctx.globalAlpha=1})
+  }
+  function loop(t){if(!running)return;const dt=Math.min((t-last)/1000,.035);last=t;update(dt);draw();if(running)requestAnimationFrame(loop)}
+  draw();heartView();
+})();
+</script>
+</body>
+</html>
